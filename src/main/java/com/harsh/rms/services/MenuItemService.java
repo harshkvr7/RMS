@@ -3,6 +3,9 @@ package com.harsh.rms.services;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import com.harsh.rms.dto.MenuItemRequestDto;
@@ -21,6 +24,8 @@ public class MenuItemService {
         this.menuItemRepository = menuItemRepository;
     }
 
+    @CachePut(value = "menuItems", key = "#result.id")
+    @CacheEvict(value = {"allMenuItems", "menuItemsByName", "menuItemsByRestaurant"}, allEntries = true)
     public MenuItemResponseDto addMenuItem(MenuItemRequestDto menuItemRequestDto) {
         return menuItemMapper
                 .toMenuItemResponseDto(menuItemRepository
@@ -28,6 +33,7 @@ public class MenuItemService {
                                 .toMenuItem(menuItemRequestDto)));
     }
 
+    @Cacheable(value = "menuItems", key = "#id")
     public MenuItemResponseDto getMenuItemById(Integer id) {
         return menuItemMapper
                 .toMenuItemResponseDto(menuItemRepository
@@ -35,6 +41,7 @@ public class MenuItemService {
                         .orElse(null));
     }
 
+    @Cacheable(value = "allMenuItems")
     public List<MenuItemResponseDto> getAllMenuItems() {
         return menuItemRepository
                 .findAll()
@@ -43,6 +50,7 @@ public class MenuItemService {
                 .collect(Collectors.toList());
     }
 
+    @Cacheable(value = "menuItemsByName", key = "#menuItemName")
     public List<MenuItemResponseDto> getMenuItemByName(String menuItemName) {
         return menuItemRepository.findAllBynameContaining(menuItemName)
                 .stream()
@@ -50,6 +58,8 @@ public class MenuItemService {
                 .collect(Collectors.toList());
     }
 
+    @CachePut(value = "menuItems", key = "#id")
+    @CacheEvict(value = {"allMenuItems", "menuItemsByName", "menuItemsByRestaurant"}, allEntries = true)
     public MenuItemResponseDto updateMenuItem(Integer id, MenuItemRequestDto menuItemRequestDto) {
         return menuItemRepository.findById(id)
                 .map(menuItem -> {
@@ -62,10 +72,12 @@ public class MenuItemService {
                 .orElse(null);
     }
 
+    @CacheEvict(value = {"menuItems", "allMenuItems", "menuItemsByName", "menuItemsByRestaurant"}, allEntries = true)
     public void deleteMenuItem(Integer id) {
         menuItemRepository.deleteById(id);
     }
 
+    @Cacheable(value = "menuItemsByRestaurant", key = "#restaurantId")
     public List<MenuItemResponseDto> getMenuItemsByRestaurantId(Integer restaurantId) {
         return menuItemRepository.findAllByrestaurantId(restaurantId)
                 .stream()
