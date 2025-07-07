@@ -6,53 +6,74 @@ import java.util.stream.Collectors;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
+import com.harsh.rms.dao.MenuItemDao;
 import com.harsh.rms.dto.MenuItemRequestDto;
 import com.harsh.rms.dto.MenuItemResponseDto;
 import com.harsh.rms.mapper.MenuItemMapper;
-import com.harsh.rms.repositories.MenuItemRepository;
+import com.harsh.rms.models.MenuItem;
+import com.harsh.rms.models.Restaurant;
+import com.harsh.rms.repositories.RestaurantRepository;
 
 @Service
 public class MenuItemService {
 
     private final MenuItemMapper menuItemMapper;
-    private final MenuItemRepository menuItemRepository;
+    private final MenuItemDao menuItemDao;
+    private final RestaurantRepository restaurantRepository;
 
-    public MenuItemService(MenuItemMapper menuItemMapper, MenuItemRepository menuItemRepository) {
+    public MenuItemService(MenuItemMapper menuItemMapper, MenuItemDao menuItemDao, RestaurantRepository restaurantRepository) {
         this.menuItemMapper = menuItemMapper;
-        this.menuItemRepository = menuItemRepository;
+        this.menuItemDao = menuItemDao;
+        this.restaurantRepository = restaurantRepository;
     }
 
-    @CachePut(value = "menuItems", key = "#result.id")
     @CacheEvict(value = {"allMenuItems", "menuItemsByName", "menuItemsByRestaurant"}, allEntries = true)
-    public MenuItemResponseDto addMenuItem(MenuItemRequestDto menuItemRequestDto) {
-        return menuItemMapper
-                .toMenuItemResponseDto(menuItemRepository
-                        .save(menuItemMapper
-                                .toMenuItem(menuItemRequestDto)));
+    public ResponseEntity<?> addMenuItem(MenuItemRequestDto dto, Integer userId) {
+        Restaurant restaurant = restaurantRepository.findById(dto.restaurant_id()).orElse(null);
+
+        if (restaurant == null) {
+            return ResponseEntity.status(404).body("Restaurant not found");
+        }
+
+        if (!restaurant.getOwner().getId().equals(userId)) {
+            return ResponseEntity.status(403).body("Access Denied");
+        }
+
+        MenuItem menuItem = menuItemMapper.toMenuItem(dto);
+        menuItem.setRestaurant(restaurant);
+
+        return ResponseEntity.ok(menuItemMapper.toMenuItemResponseDto(menuItemDao.save(menuItem)));
     }
 
     @Cacheable(value = "menuItems", key = "#id")
     public MenuItemResponseDto getMenuItemById(Integer id) {
-        return menuItemMapper
-                .toMenuItemResponseDto(menuItemRepository
-                        .findById(id)
-                        .orElse(null));
+        return menuItemMapper.toMenuItemResponseDto(
+                menuItemDao.findById(id).orElse(null)
+        );
     }
 
     @Cacheable(value = "allMenuItems")
     public List<MenuItemResponseDto> getAllMenuItems() {
-        return menuItemRepository
-                .findAll()
+        return menuItemDao.findAll()
                 .stream()
                 .map(menuItemMapper::toMenuItemResponseDto)
                 .collect(Collectors.toList());
     }
 
-    @Cacheable(value = "menuItemsByName", key = "#menuItemName")
-    public List<MenuItemResponseDto> getMenuItemByName(String menuItemName) {
-        return menuItemRepository.findAllBynameContaining(menuItemName)
+    @Cacheable(value = "menuItemsByName", key = "#name")
+    public List<MenuItemResponseDto> getMenuItemByName(String name) {
+        return menuItemDao.findAllByNameContaining(name)
+                .stream()
+                .map(menuItemMapper::toMenuItemResponseDto)
+                .collect(Collectors.toList());
+    }
+
+    @Cacheable(value = "menuItemsByRestaurant", key = "#restaurantId")
+    public List<MenuItemResponseDto> getMenuItemsByRestaurantId(Integer restaurantId) {
+        return menuItemDao.findAllByRestaurantId(restaurantId)
                 .stream()
                 .map(menuItemMapper::toMenuItemResponseDto)
                 .collect(Collectors.toList());
@@ -60,28 +81,34 @@ public class MenuItemService {
 
     @CachePut(value = "menuItems", key = "#id")
     @CacheEvict(value = {"allMenuItems", "menuItemsByName", "menuItemsByRestaurant"}, allEntries = true)
-    public MenuItemResponseDto updateMenuItem(Integer id, MenuItemRequestDto menuItemRequestDto) {
-        return menuItemRepository.findById(id)
+    public ResponseEntity<?> updateMenuItem(Integer id, MenuItemRequestDto dto, Integer userId) {
+        return menuItemDao.findById(id)
                 .map(menuItem -> {
-                    menuItem.setName(menuItemRequestDto.name());
-                    menuItem.setPrice(menuItemRequestDto.price());
-                    menuItem.setDescription(menuItemRequestDto.description());
+                    Restaurant restaurant = menuItem.getRestaurant();
 
-                    return menuItemMapper.toMenuItemResponseDto(menuItemRepository.save(menuItem));
+                    if (!restaurant.getOwner().getId().equals(userId)) {
+                        return ResponseEntity.status(403).body("Access Denied");
+                    }
+
+                    menuItem.setName(dto.name());
+                    menuItem.setPrice(dto.price());
+                    menuItem.setDescription(dto.description());
+
+                    return ResponseEntity.ok(menuItemMapper.toMenuItemResponseDto(menuItemDao.save(menuItem)));
                 })
-                .orElse(null);
+                .orElse(ResponseEntity.status(404).body("Menu item not found"));
     }
 
     @CacheEvict(value = {"menuItems", "allMenuItems", "menuItemsByName", "menuItemsByRestaurant"}, allEntries = true)
-    public void deleteMenuItem(Integer id) {
-        menuItemRepository.deleteById(id);
-    }
-
-    @Cacheable(value = "menuItemsByRestaurant", key = "#restaurantId")
-    public List<MenuItemResponseDto> getMenuItemsByRestaurantId(Integer restaurantId) {
-        return menuItemRepository.findAllByrestaurantId(restaurantId)
-                .stream()
-                .map(menuItemMapper::toMenuItemResponseDto)
-                .collect(Collectors.toList());
+    public ResponseEntity<?> deleteMenuItem(Integer id, Integer userId) {
+        return menuItemDao.findById(id)
+                .map(menuItem -> {
+                    if (!menuItem.getRestaurant().getOwner().getId().equals(userId)) {
+                        return ResponseEntity.status(403).body("Access Denied");
+                    }
+                    menuItemDao.deleteById(id);
+                    return ResponseEntity.ok("Menu item deleted");
+                })
+                .orElse(ResponseEntity.status(404).body("Menu item not found"));
     }
 }

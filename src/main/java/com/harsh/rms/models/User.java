@@ -33,13 +33,9 @@ public class User {
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
-    @Column(name = "role", nullable = false, length = 20)
-    private String role;
-
     public User(String name, String email, String passwordHash, String role) {
         this.name = name;
         this.email = email;
         this.passwordHash = passwordHash;
-        this.role = role;
     }
 }
